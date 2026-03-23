@@ -488,7 +488,7 @@ struct Bucket {
     /* this branch can be removed*/
     assert(slot < kNumPairPerBucket);
     if (slot == -1) {
-      std::cout << "Cannot find the empty slot, for key " << key << std::endl;
+      //std::cout << "Cannot find the empty slot, for key " << key << std::endl;
       return -1;
     }
     _[slot].value = value;
@@ -573,7 +573,9 @@ struct Directory {
   }
 
   static void New(Directory **dir, size_t capacity, size_t _version){
-    Allocator::ZAllocate((void **)dir, kCacheLineSize, sizeof(Directory<T>) + sizeof(table_p) * capacity);
+    auto size = sizeof(Directory<T>) + sizeof(table_p) * capacity;
+    posix_memalign((void **)dir, kCacheLineSize, size);
+    memset(*dir, 0, size);
     new (*dir) Directory(capacity, _version);
   }
 };
@@ -582,7 +584,8 @@ struct Directory {
 template <class T>
 struct Table {
   static void New(Table<T> **tbl, size_t depth, Table<T>* pp) {
-    Allocator::ZAllocate((void **)tbl, kCacheLineSize, sizeof(Table<T>));
+    posix_memalign((void **)tbl, kCacheLineSize, sizeof(Table<T>));
+    memset(*tbl, 0, sizeof(Table<T>));
     (*tbl)->local_depth = depth;
     (*tbl)->state = -3;
     (*tbl)->next = pp;
@@ -1259,7 +1262,6 @@ class Finger_EH : public Hash<T> {
 #endif
   }
 
-
   inline bool Acquire(void) {
     int unlocked = 0;
     return CAS(&lock, &unlocked, 1);
@@ -1370,8 +1372,8 @@ void Finger_EH<T>::Directory_Doubling(int x, Table<T> *new_b, Table<T> *old_b) {
       reinterpret_cast<uint64_t>(new_b) | crash_version);
   new_sa->depth_count = 2;
 
-  auto reserve_item = Allocator::ReserveItem();
-  Allocator::Free(reserve_item, dir);
+  //auto reserve_item = Allocator::ReserveItem();
+  //Allocator::Free(reserve_item, dir);
   old_b->local_depth += 1;
   dir = new_sa;
 }
@@ -1430,7 +1432,7 @@ void Finger_EH<T>::Directory_Merge_Update(Directory<T> *_sa, uint64_t key_hash,
 template <class T>
 int Finger_EH<T>::Insert(T key, Value_t value, bool is_in_epoch) {
   if (!is_in_epoch) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    //auto epoch_guard = Allocator::AquireEpochGuard();
     return Insert(key, value);
   }
 
@@ -1530,7 +1532,7 @@ RETRY:
 template <class T>
 bool Finger_EH<T>::Get(T key, Value_t* value, bool is_in_epoch) {
   if (!is_in_epoch) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    //auto epoch_guard = Allocator::AquireEpochGuard();
     return Get(key, value);
   }
   uint64_t key_hash;
@@ -1832,8 +1834,8 @@ void Finger_EH<T>::TryMerge(size_t key_hash) {
         if (right_seg->number != 0) {
           left_seg->Merge(right_seg);
         }
-        auto reserve_item = Allocator::ReserveItem();
-        Allocator::Free(reserve_item, right_seg);
+        //auto reserve_item = Allocator::ReserveItem();
+        //Allocator::Free(reserve_item, right_seg);
         left_seg->next = right_seg->next;
 
         left_seg->pattern = left_seg->pattern >> 1;
@@ -1867,7 +1869,7 @@ void Finger_EH<T>::TryMerge(size_t key_hash) {
 template <class T>
 bool Finger_EH<T>::Delete(T key, bool is_in_epoch) {
   if (!is_in_epoch) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    //auto epoch_guard = Allocator::AquireEpochGuard();
     return Delete(key);
   }
   return Delete(key);
