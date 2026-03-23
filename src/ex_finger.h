@@ -13,21 +13,15 @@
 #include <immintrin.h>
 #include <omp.h>
 
-#include <bitset>
 #include <cassert>
 #include <cmath>
 #include <cstring>
 #include <iostream>
-#include <shared_mutex>
-#include <thread>
-#include <tuple>
-#include <unordered_map>
-#include <vector>
 
 #include "../util/hash.h"
 #include "../util/pair.h"
+#include "../util/utils.h"
 #include "Hash.h"
-#include "allocator.h"
 
 uint64_t merge_time;
 

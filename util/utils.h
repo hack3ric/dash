@@ -54,7 +54,7 @@ static bool FileExists(const char *pool_path) {
     mask = _mm_movemask_epi8(rv_mask);                           \
   } while (0)
 
-#define CHECK_BIT(var, pos) ((((var) & (1 << pos)) > 0) ? (1) : (0))
+#define CHECK_BIT(var, pos) ((((var) & (1 << (pos))) > 0) ? (1) : (0))
 
 inline void mfence(void) { asm volatile("mfence" ::: "memory"); }
 
