@@ -23,9 +23,14 @@
 #include "../util/utils.h"
 #include "Hash.h"
 
-uint64_t merge_time;
+// uint64_t merge_time;
 
 namespace extendible {
+// Constexpr log2 for C++17 compatibility
+constexpr int constexpr_log2(size_t n) {
+  return n <= 1 ? 0 : 1 + constexpr_log2(n >> 1);
+}
+
 //#define COUNTING 1
 //#define PREALLOC 1
 
@@ -53,8 +58,8 @@ const constexpr size_t kNumBucket =
 constexpr size_t stashBucket =
     2; /* the number of stash buckets in one segment*/
 constexpr int allocMask = (1 << kNumPairPerBucket) - 1;
-constexpr size_t bucketMask = ((1 << (int)log2(kNumBucket)) - 1);
-constexpr size_t stashMask = (1 << (int)log2(stashBucket)) - 1;
+constexpr size_t bucketMask = ((1 << constexpr_log2(kNumBucket)) - 1);
+constexpr size_t stashMask = ((1 << constexpr_log2(stashBucket)) - 1);
 constexpr uint8_t stashHighMask = ~((uint8_t)stashMask);
 
 #define BUCKET_INDEX(hash) ((hash >> kFingerBits) & bucketMask)

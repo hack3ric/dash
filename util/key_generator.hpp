@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <ctime>
+
 #include "zipfian_int_distribution.hpp"
 #include "random.h"
 
