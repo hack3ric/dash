@@ -27,8 +27,6 @@ if(NOT epoch_reclaimer_POPULATED)
   include_directories(${epoch_reclaimer_SOURCE_DIR})
 endif()
 
-option(USE_PMEM "enable persistent memory support" ON)
-
 set(libs_to_link
   pthread gflags)
 
