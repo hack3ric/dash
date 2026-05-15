@@ -118,16 +118,17 @@ template <class T>
 struct Seg_array {
   using seg_p = Segment<T>*;
   size_t global_depth;
-  seg_p* entries_;
+
+  seg_p* entries() {
+    return reinterpret_cast<seg_p*>(reinterpret_cast<char*>(this) +
+                                    sizeof(Seg_array));
+  }
 
   static void New(Seg_array<T>** sa, size_t capacity) {
     Allocator::ZAllocate(reinterpret_cast<void**>(sa), kCacheLineSize,
                          sizeof(Seg_array) + sizeof(seg_p) * capacity);
     (*sa)->global_depth = static_cast<size_t>(log2(capacity));
-    (*sa)->entries_ =
-        reinterpret_cast<seg_p*>(reinterpret_cast<char*>(*sa) +
-                                 sizeof(Seg_array));
-    memset((*sa)->entries_, 0, capacity * sizeof(seg_p));
+    memset((*sa)->entries(), 0, capacity * sizeof(seg_p));
   }
 };
 
@@ -167,7 +168,7 @@ struct Directory {
     size_t count = 0;
     size_t seg_num = 0;
     Seg_array<T>* seg = sa;
-    Segment<T>** dir_entry = seg->entries_;
+    Segment<T>** dir_entry = seg->entries();
     Segment<T>* ss;
     auto global_depth = seg->global_depth;
     size_t depth_diff;
@@ -380,7 +381,7 @@ CCEH<T>::CCEH(size_t initCap) {
   Seg_array<T>::New(&dir->new_sa, initCap);
   dir->sa = dir->new_sa;
   dir->new_sa = nullptr;
-  auto dir_entry = dir->sa->entries_;
+  auto dir_entry = dir->sa->entries();
   for (size_t i = 0; i < dir->capacity; ++i) {
     Segment<T>::New(&dir_entry[i], dir->sa->global_depth);
     dir_entry[i]->pattern = i;
@@ -412,13 +413,13 @@ void CCEH<T>::TX_Swap(void** entry, Segment<T>** new_seg) {
 template <class T>
 void CCEH<T>::Directory_Doubling(size_t x, Segment<T>* s0, Segment<T>** s1) {
   Seg_array<T>* sa = dir->sa;
-  Segment<T>** d = sa->entries_;
+  Segment<T>** d = sa->entries();
   auto global_depth = sa->global_depth;
 
   /* new segment array*/
   Seg_array<T>::New(&dir->new_sa, 2 * dir->capacity);
   auto new_seg_array = dir->new_sa;
-  auto dd = new_seg_array->entries_;
+  auto dd = new_seg_array->entries();
 
   for (size_t i = 0; i < dir->capacity; ++i) {
     dd[2 * i] = d[i];
@@ -435,7 +436,7 @@ void CCEH<T>::Directory_Doubling(size_t x, Segment<T>* s0, Segment<T>** s1) {
 
 template <class T>
 void CCEH<T>::Directory_Update(size_t x, Segment<T>* s0, Segment<T>** s1) {
-  Segment<T>** dir_entry = dir->sa->entries_;
+  Segment<T>** dir_entry = dir->sa->entries();
   auto global_depth = dir->sa->global_depth;
     auto depth_diff = global_depth - s0->local_depth;
     if (depth_diff == 1) {
@@ -484,7 +485,7 @@ int CCEH<T>::Insert(T key, Value_t value) {
         continue;
       }
       auto x = (key_hash >> (64 - old_sa->global_depth));
-      auto dir_entry = old_sa->entries_;
+      auto dir_entry = old_sa->entries();
       Segment<T>* target = dir_entry[x];
 
       auto ret = target->Insert(key, value, y, key_hash);
@@ -506,7 +507,7 @@ int CCEH<T>::Insert(T key, Value_t value) {
         {
           DirectoryGuard dir_guard(dir);
           auto sa = dir->sa;
-          dir_entry = sa->entries_;
+          dir_entry = sa->entries();
 
           x = (key_hash >> (64 - sa->global_depth));
           target = dir_entry[x];
@@ -562,7 +563,7 @@ bool CCEH<T>::Delete(T key) {
       continue;
     }
     auto x = (key_hash >> (64 - old_sa->global_depth));
-    auto dir_entry = old_sa->entries_;
+    auto dir_entry = old_sa->entries();
     Segment<T>* dir_ = dir_entry[x];
 
     auto sema = dir_->sema;
@@ -624,7 +625,7 @@ bool CCEH<T>::Get(T key, Value_t* value_) {
       continue;
     }
     auto x = (key_hash >> (64 - old_sa->global_depth));
-    auto dir_entry = old_sa->entries_;
+    auto dir_entry = old_sa->entries();
     Segment<T>* dir_ = dir_entry[x];
 
     std::shared_lock<std::shared_mutex> lock(dir_->mutex, std::try_to_lock);
