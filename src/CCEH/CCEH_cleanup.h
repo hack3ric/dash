@@ -455,7 +455,7 @@ void CCEH<T>::Directory_Doubling(int x, Segment<T>* s0, Segment<T>** s1) {
 
   TX_Swap((void**)&dd[2 * x + 1], s1);
 
-  free(sa);
+  Allocator::Free(sa);
   dir->sa = new_seg_array;
   dir->new_sa = nullptr;
   dir->capacity *= 2;
@@ -522,12 +522,12 @@ STARTOVER:
 
 RETRY:
   auto old_sa = dir->sa;
-  auto x = (key_hash >> (8 * sizeof(key_hash) - old_sa->global_depth));
-  auto dir_entry = old_sa->entries_;
-  Segment<T>* target = dir_entry[x];
   if (old_sa != dir->sa) {
     goto RETRY;
   }
+  auto x = (key_hash >> (8 * sizeof(key_hash) - old_sa->global_depth));
+  auto dir_entry = old_sa->entries_;
+  Segment<T>* target = dir_entry[x];
 
   auto ret = target->Insert(key, value, y, key_hash);
 
@@ -598,6 +598,9 @@ bool CCEH<T>::Delete(T key) {
 
 RETRY:
   auto old_sa = dir->sa;
+  if (old_sa != dir->sa) {
+    goto RETRY;
+  }
   auto x = (key_hash >> (8 * sizeof(key_hash) - old_sa->global_depth));
   auto dir_entry = old_sa->entries_;
   Segment<T>* dir_ = dir_entry[x];
@@ -660,6 +663,9 @@ bool CCEH<T>::Get(T key, Value_t* value_) {
 
 RETRY:
   auto old_sa = dir->sa;
+  if (old_sa != dir->sa) {
+    goto RETRY;
+  }
   auto x = (key_hash >> (8 * sizeof(key_hash) - old_sa->global_depth));
   auto dir_entry = old_sa->entries_;
   Segment<T>* dir_ = dir_entry[x];
