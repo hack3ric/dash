@@ -112,13 +112,16 @@ template <class T>
 struct Seg_array {
   typedef Segment<T>* seg_p;
   size_t global_depth;
-  seg_p entries_[0];
+  seg_p* entries_;
 
   static void New(Seg_array<T>** sa, size_t capacity) {
     Allocator::ZAllocate((void**)sa, kCacheLineSize,
-                         sizeof(Seg_array) + sizeof(uint64_t) * capacity);
+                         sizeof(Seg_array) + sizeof(seg_p) * capacity);
     (*sa)->global_depth = static_cast<size_t>(log2(capacity));
-    memset((*sa)->entries_, 0, capacity * sizeof(uint64_t));
+    (*sa)->entries_ =
+        reinterpret_cast<seg_p*>(reinterpret_cast<char*>(*sa) +
+                                 sizeof(Seg_array));
+    memset((*sa)->entries_, 0, capacity * sizeof(seg_p));
   }
 };
 
