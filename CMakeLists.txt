@@ -4,8 +4,6 @@ endif()
 
 cmake_minimum_required(VERSION 3.11)
 project(dash)
-include(FetchContent)
-include(ExternalProject)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-long-long -fPIC -march=native")
@@ -17,15 +15,7 @@ if(${CMAKE_BUILD_TYPE} STREQUAL "Release")
 endif()
 
 ##################### Epoch Reclaim ####################
-fetchcontent_declare(
-  epoch_reclaimer
-  GIT_REPOSITORY https://github.com/XiangpengHao/epoch-reclaimer.git
-  GIT_TAG master
-)
-if(NOT epoch_reclaimer_POPULATED)
-  fetchcontent_populate(epoch_reclaimer)
-  include_directories(${epoch_reclaimer_SOURCE_DIR})
-endif()
+include_directories(${CMAKE_SOURCE_DIR}/third_party/epoch_reclaimer)
 
 set(libs_to_link
   pthread gflags)
