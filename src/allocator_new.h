@@ -5,46 +5,71 @@
 #include <garbage_list.h>
 #include <sys/mman.h>
 #include <cstring>
+#include <memory>
 
 #include "../util/utils.h"
 #include "x86intrin.h"
 
-typedef void (*DestroyCallback)(void* callback_context, void* object);
+using DestroyCallback = void (*)(void* callback_context, void* object);
 
-struct Allocator {
+class Allocator {
  public:
   static void Initialize() {
-    instance_ = new Allocator();
+    instance_ = std::unique_ptr<Allocator>(new Allocator());
     instance_->epoch_manager_.Initialize();
     instance_->garbage_list_.Initialize(&instance_->epoch_manager_, 1024 * 8);
   }
 
-  static void Close_pool() {
-    delete instance_;
+  static void Close_pool() { instance_.reset(); }
+
+  static Allocator* Get() { return instance_.get(); }
+
+  static void* AllocateRaw(size_t alignment, size_t size) {
+    void* ptr;
+    posix_memalign(&ptr, alignment, size);
+    return ptr;
   }
 
-  Allocator() {
+  static void* ZAllocateRaw(size_t alignment, size_t size) {
+    void* ptr;
+    posix_memalign(&ptr, alignment, size);
+    memset(ptr, 0, size);
+    return ptr;
   }
 
-  EpochManager epoch_manager_{};
-  GarbageList garbage_list_{};
+  template <typename T, typename... Args>
+  static T* New(size_t alignment, size_t extra_bytes, Args&&... args) {
+    void* raw = ZAllocateRaw(alignment, sizeof(T) + extra_bytes);
+    return std::construct_at(static_cast<T*>(raw),
+                             std::forward<Args>(args)...);
+  }
 
-  static Allocator* instance_;
-  static Allocator* Get() { return instance_; }
+  template <typename T>
+  static T* New(size_t alignment, size_t extra_bytes) {
+    return static_cast<T*>(ZAllocateRaw(alignment, sizeof(T) + extra_bytes));
+  }
+
+  template <typename T>
+  struct Deleter {
+    void operator()(T* ptr) const { Delete(ptr); }
+  };
+
+  template <typename T, typename... Args>
+  static auto MakeUnique(size_t alignment, size_t extra_bytes,
+                         Args&&... args) {
+    return std::unique_ptr<T, Deleter<T>>(
+        New<T>(alignment, extra_bytes, std::forward<Args>(args)...));
+  }
 
   static void Allocate(void** ptr, uint32_t alignment, size_t size) {
-    posix_memalign(ptr, alignment, size);
+    *ptr = AllocateRaw(alignment, size);
   }
 
-  /*Must ensure that this pointer is in persistent memory*/
   static void ZAllocate(void** ptr, uint32_t alignment, size_t size) {
-    posix_memalign(ptr, alignment, size);
-    memset(*ptr, 0, size);
+    *ptr = ZAllocateRaw(alignment, size);
   }
 
-  static void DefaultCallback(void* callback_context, void* ptr) {
-    free(ptr);
-  }
+  static void DefaultCallback(void* callback_context, void* ptr) { free(ptr); }
 
   static void Free(void* ptr, DestroyCallback callback = DefaultCallback,
                    void* context = nullptr) {
@@ -56,6 +81,11 @@ struct Allocator {
                    void* context = nullptr) {
     item->SetValue(ptr, instance_->epoch_manager_.GetCurrentEpoch(), callback,
                    context);
+  }
+
+  template <typename T>
+  static void Delete(T* ptr) {
+    Free(static_cast<void*>(ptr));
   }
 
   static EpochGuard AquireEpochGuard() {
@@ -73,6 +103,12 @@ struct Allocator {
   static void ResetItem(GarbageList::Item* mem) {
     instance_->garbage_list_.ResetItem(mem);
   }
+
+ private:
+  Allocator() = default;
+  EpochManager epoch_manager_{};
+  GarbageList garbage_list_{};
+  static std::unique_ptr<Allocator> instance_;
 };
 
-Allocator* Allocator::instance_ = nullptr;
+std::unique_ptr<Allocator> Allocator::instance_;

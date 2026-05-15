@@ -16,7 +16,7 @@
 #include "../util/key_generator.hpp"
 #include "../util/uniform.hpp"
 #include "Hash.h"
-#include "allocator.h"
+#include "allocator_new.h"
 // #include "ex_finger.h"
 #include "CCEH/CCEH_cleanup.h"
 

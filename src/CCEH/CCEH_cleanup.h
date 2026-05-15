@@ -26,7 +26,7 @@ deadlock caused by sudden system failure.
 #include "../../util/pair.h"
 #include "../../util/utils.h"
 #include "../Hash.h"
-#include "../allocator.h"
+#include "../allocator_new.h"
 
 constexpr bool kInplace = true;
 constexpr bool kUseEpoch = false;
@@ -89,11 +89,6 @@ struct Segment {
     memset(static_cast<void*>(slots_), 255, sizeof(Pair<T>) * kNumSlot);
   }
 
-  static void New(Segment<T>** seg, size_t depth) {
-    Allocator::ZAllocate(reinterpret_cast<void**>(seg), kCacheLineSize, sizeof(Segment));
-    std::construct_at(*seg, depth);
-  }
-
   ~Segment() = default;
 
   InsertResult Insert(T, Value_t, size_t, size_t);
@@ -123,27 +118,20 @@ struct Seg_array {
     return reinterpret_cast<seg_p*>(reinterpret_cast<char*>(this) +
                                     sizeof(Seg_array));
   }
-
-  static void New(Seg_array<T>** sa, size_t capacity) {
-    Allocator::ZAllocate(reinterpret_cast<void**>(sa), kCacheLineSize,
-                         sizeof(Seg_array) + sizeof(seg_p) * capacity);
-    (*sa)->global_depth = static_cast<size_t>(log2(capacity));
-    memset((*sa)->entries(), 0, capacity * sizeof(seg_p));
-  }
 };
 
 template <class T>
 struct Directory {
   static const size_t kDefaultDirectorySize = 1024;
-  Seg_array<T>* sa;
-  Seg_array<T>* new_sa;
+  std::unique_ptr<Seg_array<T>, Allocator::Deleter<Seg_array<T>>> sa;
+  std::unique_ptr<Seg_array<T>, Allocator::Deleter<Seg_array<T>>> new_sa;
   size_t capacity;
   bool lock;
   int sema = 0;
 
   Directory(Seg_array<T>* _sa) {
     capacity = kDefaultDirectorySize;
-    sa = _sa;
+    sa.reset(_sa);
     new_sa = nullptr;
     lock = false;
     sema = 0;
@@ -151,15 +139,10 @@ struct Directory {
 
   Directory(size_t size, Seg_array<T>* _sa) {
     capacity = size;
-    sa = _sa;
+    sa.reset(_sa);
     new_sa = nullptr;
     lock = false;
     sema = 0;
-  }
-
-  static void New(Directory** dir, size_t capacity) {
-    Allocator::ZAllocate(reinterpret_cast<void**>(dir), kCacheLineSize, sizeof(Directory));
-    std::construct_at(*dir, capacity, nullptr);
   }
 
   ~Directory() = default;
@@ -167,7 +150,7 @@ struct Directory {
   void get_item_num() {
     size_t count = 0;
     size_t seg_num = 0;
-    Seg_array<T>* seg = sa;
+    Seg_array<T>* seg = sa.get();
     Segment<T>** dir_entry = seg->entries();
     Segment<T>* ss;
     auto global_depth = seg->global_depth;
@@ -251,7 +234,7 @@ class CCEH : public Hash<T> {
   void getNumber() { dir->get_item_num(); }
 
  private:
-  Directory<T>* dir;
+  std::unique_ptr<Directory<T>, Allocator::Deleter<Directory<T>>> dir;
   std::array<log_entry<T>, kLogNum> log;
   size_t seg_num;
   size_t restart;
@@ -349,8 +332,8 @@ Segment<T>** Segment<T>::Split(size_t key_hash, log_entry<T>* log) {
   size_t log_pos = key_hash % kLogNum;
   log[log_pos].Lock_log();
 
-  Segment::New(&log[log_pos].temp,
-               local_depth + 1);
+  log[log_pos].temp =
+      Allocator::New<Segment<T>>(kCacheLineSize, 0, local_depth + 1);
   Segment<T>* split = log[log_pos].temp;
 
   for (size_t i = 0; i < kNumSlot; ++i) {
@@ -377,13 +360,19 @@ Segment<T>** Segment<T>::Split(size_t key_hash, log_entry<T>* log) {
 
 template <class T>
 CCEH<T>::CCEH(size_t initCap) {
-  Directory<T>::New(&dir, initCap);
-  Seg_array<T>::New(&dir->new_sa, initCap);
-  dir->sa = dir->new_sa;
-  dir->new_sa = nullptr;
+  dir = Allocator::MakeUnique<Directory<T>>(kCacheLineSize, 0, initCap, nullptr);
+
+  auto new_sa =
+      Allocator::New<Seg_array<T>>(kCacheLineSize,
+                                   sizeof(typename Seg_array<T>::seg_p) * initCap);
+  new_sa->global_depth = static_cast<size_t>(log2(initCap));
+  memset(new_sa->entries(), 0, initCap * sizeof(typename Seg_array<T>::seg_p));
+  dir->sa.reset(new_sa);
+
   auto dir_entry = dir->sa->entries();
   for (size_t i = 0; i < dir->capacity; ++i) {
-    Segment<T>::New(&dir_entry[i], dir->sa->global_depth);
+    dir_entry[i] = Allocator::New<Segment<T>>(kCacheLineSize, 0,
+                                               dir->sa->global_depth);
     dir_entry[i]->pattern = i;
   }
   /*clear the log area*/
@@ -412,14 +401,19 @@ void CCEH<T>::TX_Swap(void** entry, Segment<T>** new_seg) {
 
 template <class T>
 void CCEH<T>::Directory_Doubling(size_t x, Segment<T>* s0, Segment<T>** s1) {
-  Seg_array<T>* sa = dir->sa;
+  auto* sa = dir->sa.get();
   Segment<T>** d = sa->entries();
   auto global_depth = sa->global_depth;
 
-  /* new segment array*/
-  Seg_array<T>::New(&dir->new_sa, 2 * dir->capacity);
-  auto new_seg_array = dir->new_sa;
-  auto dd = new_seg_array->entries();
+  size_t new_capacity = 2 * dir->capacity;
+  auto new_seg_array =
+      Allocator::New<Seg_array<T>>(kCacheLineSize,
+                                   sizeof(typename Seg_array<T>::seg_p) * new_capacity);
+  new_seg_array->global_depth = static_cast<size_t>(log2(new_capacity));
+  memset(new_seg_array->entries(), 0,
+         new_capacity * sizeof(typename Seg_array<T>::seg_p));
+  dir->new_sa.reset(new_seg_array);
+  auto dd = dir->new_sa->entries();
 
   for (size_t i = 0; i < dir->capacity; ++i) {
     dd[2 * i] = d[i];
@@ -428,9 +422,7 @@ void CCEH<T>::Directory_Doubling(size_t x, Segment<T>* s0, Segment<T>** s1) {
 
   TX_Swap(reinterpret_cast<void**>(&dd[2 * x + 1]), s1);
 
-  Allocator::Free(sa);
-  dir->sa = new_seg_array;
-  dir->new_sa = nullptr;
+  dir->sa = std::move(dir->new_sa);
   dir->capacity *= 2;
 }
 
@@ -480,8 +472,8 @@ int CCEH<T>::Insert(T key, Value_t value) {
     auto y = (key_hash & kMask) * kNumPairPerCacheLine;
 
     for (;;) {
-      auto old_sa = dir->sa;
-      if (old_sa != dir->sa) {
+      auto old_sa = dir->sa.get();
+      if (old_sa != dir->sa.get()) {
         continue;
       }
       auto x = (key_hash >> (64 - old_sa->global_depth));
@@ -505,8 +497,8 @@ int CCEH<T>::Insert(T key, Value_t value) {
 
         // Directory management
         {
-          DirectoryGuard dir_guard(dir);
-          auto sa = dir->sa;
+          DirectoryGuard dir_guard(dir.get());
+          auto sa = dir->sa.get();
           dir_entry = sa->entries();
 
           x = (key_hash >> (64 - sa->global_depth));
@@ -558,8 +550,8 @@ bool CCEH<T>::Delete(T key) {
   auto y = (key_hash & kMask) * kNumPairPerCacheLine;
 
   for (;;) {
-    auto old_sa = dir->sa;
-    if (old_sa != dir->sa) {
+    auto old_sa = dir->sa.get();
+    if (old_sa != dir->sa.get()) {
       continue;
     }
     auto x = (key_hash >> (64 - old_sa->global_depth));
@@ -620,8 +612,8 @@ bool CCEH<T>::Get(T key, Value_t* value_) {
   auto y = (key_hash & kMask) * kNumPairPerCacheLine;
 
   for (;;) {
-    auto old_sa = dir->sa;
-    if (old_sa != dir->sa) {
+    auto old_sa = dir->sa.get();
+    if (old_sa != dir->sa.get()) {
       continue;
     }
     auto x = (key_hash >> (64 - old_sa->global_depth));
