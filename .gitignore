@@ -43,3 +43,4 @@ cmake-build-*
 build/*
 
 compile_commands.json
+session-*.md
