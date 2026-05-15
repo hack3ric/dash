@@ -17,8 +17,8 @@
 #include "../util/uniform.hpp"
 #include "Hash.h"
 #include "allocator.h"
-#include "ex_finger.h"
-#include "CCEH/CCEH_baseline_dram.h"
+// #include "ex_finger.h"
+#include "CCEH/CCEH_cleanup.h"
 
 DEFINE_string(index, "dash-ex",
               "the index to evaluate:dash-ex/dash-lh/cceh/level");
