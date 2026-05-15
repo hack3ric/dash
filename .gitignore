@@ -41,3 +41,5 @@ pmem_hash.data
 .idea
 cmake-build-*
 build/*
+
+compile_commands.json

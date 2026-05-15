@@ -18,6 +18,7 @@
 #include "Hash.h"
 #include "allocator.h"
 #include "ex_finger.h"
+#include "CCEH/CCEH_baseline_dram.h"
 
 DEFINE_string(index, "dash-ex",
               "the index to evaluate:dash-ex/dash-lh/cceh/level");
@@ -96,7 +97,8 @@ Hash<T> *InitializeIndex(int seg_num) {
   if (index_type == "dash-ex") {
     std::cout << "Initialize Dash-EH" << std::endl;
     Allocator::Initialize();
-    eh = new extendible::Finger_EH<T>(seg_num);
+    // eh = new extendible::Finger_EH<T>(seg_num);
+    eh = new cceh::CCEH<T>(seg_num);
   }
   std::cout << "end up the initialization" << std::endl;
 
