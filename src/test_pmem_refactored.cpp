@@ -7,7 +7,7 @@
 // (uint64_t) and variable-length (string_key*) key types. Threads optionally
 // enrol in application-level epochs for safe memory reclamation.
 
-#include <gflags/gflags.h>
+#include <argparse/argparse.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -26,36 +26,6 @@
 #include "CCEH/CCEH_cleanup.h"
 #include "Hash.h"
 #include "allocator_new.h"
-
-// ---------------------------------------------------------------------------
-// GFlags – identical semantics to the original benchmark
-// ---------------------------------------------------------------------------
-
-DEFINE_string(index, "dash-ex",
-              "which index to evaluate: dash-ex / dash-lh / cceh / level");
-DEFINE_string(k, "fixed",
-              "type of stored keys: fixed / variable");
-DEFINE_string(distribution, "uniform",
-              "distribution of the workload: uniform / skew");
-DEFINE_uint64(i, 64,
-              "initial number of segments in extendible hashing");
-DEFINE_uint64(t, 1, "number of concurrent threads");
-DEFINE_uint64(n, 0, "number of pre-insertion (load) keys");
-DEFINE_uint64(loadType, 0,
-              "type of pre-load keys: random (0) or range (1)");
-DEFINE_uint64(p, 20000000,
-              "number of operations (insert / search / delete) to execute");
-DEFINE_string(op, "full",
-              "operation type: insert / pos / neg / delete / mixed / full / skew-all");
-DEFINE_double(r, 1, "read ratio for mixed workload: 0.0 ~ 1.0");
-DEFINE_double(s, 0, "insert ratio for mixed workload: 0.0 ~ 1.0");
-DEFINE_double(d, 0, "delete ratio for mixed workload: 0.0 ~ 1.0");
-DEFINE_double(skew, 0.8, "skew factor of the workload");
-DEFINE_uint32(e, 0, "register epoch at application level: 0 = no, 1 = yes");
-DEFINE_uint32(ms, 100, "number of milliseconds to sample operations");
-DEFINE_uint32(vl, 16, "length of the variable-length key");
-DEFINE_uint64(ps, 30ul, "size of the memory pool (GB)");
-DEFINE_uint64(ed, 1000, "frequency at which to enrol into the epoch (batch size)");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1103,26 +1073,107 @@ static bool CheckRatio(double r, double s, double d) {
 
 int main(int argc, char* argv[]) {
   SetAffinity(0);
-  gflags::ParseCommandLineFlags(&argc, &argv, true);
 
-  const int      init_cap     = static_cast<int>(FLAGS_i);
-  const int      n_threads    = static_cast<int>(FLAGS_t);
-  const uint64_t load_count   = FLAGS_n;
-  const uint64_t op_count     = FLAGS_p;
-  const uint64_t load_type    = FLAGS_loadType;
-  const uint64_t epoch_dur    = FLAGS_ed;
-  const int      var_len      = static_cast<int>(FLAGS_vl);
-  const double   read_r       = FLAGS_r;
-  const double   ins_r        = FLAGS_s;
-  const double   del_r        = FLAGS_d;
-  const double   skew_factor  = FLAGS_skew;
-  const bool     use_epoch    = (FLAGS_e != 0);
-  const size_t   pool_size    = FLAGS_ps * 1024ul * 1024ul * 1024ul;
+  // All configurable parameters with their defaults (matching the original).
+  std::string index_type   = "dash-ex";
+  std::string key_type     = "fixed";
+  std::string distribution = "uniform";
+  uint64_t    init_cap     = 64;
+  int         n_threads    = 1;
+  uint64_t    load_count   = 0;
+  uint64_t    load_type    = 0;
+  uint64_t    op_count     = 20000000;
+  std::string operation    = "full";
+  double      read_r       = 1.0;
+  double      ins_r        = 0.0;
+  double      del_r        = 0.0;
+  double      skew_factor  = 0.8;
+  bool        use_epoch    = false;
+  int         var_len      = 16;
+  uint64_t    pool_size_gb = 30;
+  uint64_t    epoch_dur    = 1000;
 
-  const std::string key_type      = FLAGS_k;
-  const std::string index_type    = FLAGS_index;
-  const std::string distribution  = FLAGS_distribution;
-  const std::string operation     = FLAGS_op;
+  argparse::ArgumentParser parser("test_pmem_refactored", "1.0",
+                                  argparse::default_arguments::help);
+
+  parser.add_argument("--index")
+      .default_value(index_type)
+      .help("which index to evaluate: dash-ex / dash-lh / cceh / level")
+      .store_into(index_type);
+  parser.add_argument("-k", "--key-type")
+      .default_value(key_type)
+      .help("type of stored keys: fixed / variable")
+      .store_into(key_type);
+  parser.add_argument("--distribution")
+      .default_value(distribution)
+      .help("distribution of the workload: uniform / skew")
+      .store_into(distribution);
+  parser.add_argument("-i", "--initial-segments")
+      .default_value(init_cap)
+      .help("initial number of segments in extendible hashing")
+      .store_into(init_cap);
+  parser.add_argument("-t", "--threads")
+      .default_value(n_threads)
+      .help("number of concurrent threads")
+      .store_into(n_threads);
+  parser.add_argument("-n", "--load-count")
+      .default_value(load_count)
+      .help("number of pre-insertion (load) keys")
+      .store_into(load_count);
+  parser.add_argument("--load-type")
+      .default_value(load_type)
+      .help("type of pre-load keys: random (0) or range (1)")
+      .store_into(load_type);
+  parser.add_argument("-p", "--operations")
+      .default_value(op_count)
+      .help("number of operations (insert / search / delete) to execute")
+      .store_into(op_count);
+  parser.add_argument("--op")
+      .default_value(operation)
+      .help("operation type: insert / pos / neg / delete / mixed / full / skew-all")
+      .store_into(operation);
+  parser.add_argument("-r", "--read-ratio")
+      .default_value(read_r)
+      .help("read ratio for mixed workload: 0.0 ~ 1.0")
+      .store_into(read_r);
+  parser.add_argument("-s", "--insert-ratio")
+      .default_value(ins_r)
+      .help("insert ratio for mixed workload: 0.0 ~ 1.0")
+      .store_into(ins_r);
+  parser.add_argument("-d", "--delete-ratio")
+      .default_value(del_r)
+      .help("delete ratio for mixed workload: 0.0 ~ 1.0")
+      .store_into(del_r);
+  parser.add_argument("--skew")
+      .default_value(skew_factor)
+      .help("skew factor of the workload")
+      .store_into(skew_factor);
+  parser.add_argument("-e", "--epoch")
+      .help("register epoch at application level")
+      .flag()
+      .store_into(use_epoch);
+  parser.add_argument("--var-length")
+      .default_value(var_len)
+      .help("length of the variable-length key")
+      .store_into(var_len);
+  parser.add_argument("--pool-size")
+      .default_value(pool_size_gb)
+      .help("size of the memory pool (GB)")
+      .store_into(pool_size_gb);
+  parser.add_argument("--epoch-duration")
+      .default_value(epoch_dur)
+      .help("frequency at which to enrol into the epoch (batch size)")
+      .store_into(epoch_dur);
+
+  try {
+    parser.parse_args(argc, argv);
+  } catch (const std::exception& e) {
+    std::cerr << "Error: " << e.what() << "\n"
+              << parser.help().str() << std::endl;
+    return 1;
+  }
+
+  const size_t pool_size = pool_size_gb * 1024ul * 1024ul * 1024ul;
 
   std::cout << "Distribution = " << distribution << std::endl;
 
@@ -1147,15 +1198,17 @@ int main(int argc, char* argv[]) {
 
   if (key_type == "fixed") {
     Run<uint64_t>(index_type, key_type, operation, distribution,
-                  init_cap, n_threads, load_count, op_count, var_len,
-                  use_epoch, epoch_dur, read_r, ins_r, del_r,
-                  skew_factor, load_type, pool_size);
+                  static_cast<int>(init_cap), n_threads, load_count,
+                  op_count, var_len, use_epoch, epoch_dur,
+                  read_r, ins_r, del_r, skew_factor,
+                  load_type, pool_size);
   } else {
     std::cout << "Variable-length key length = " << var_len << std::endl;
     Run<string_key*>(index_type, key_type, operation, distribution,
-                     init_cap, n_threads, load_count, op_count, var_len,
-                     use_epoch, epoch_dur, read_r, ins_r, del_r,
-                     skew_factor, load_type, pool_size);
+                     static_cast<int>(init_cap), n_threads, load_count,
+                     op_count, var_len, use_epoch, epoch_dur,
+                     read_r, ins_r, del_r, skew_factor,
+                     load_type, pool_size);
   }
 
   return 0;
