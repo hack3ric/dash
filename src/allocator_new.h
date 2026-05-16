@@ -54,11 +54,13 @@ class Allocator {
     void operator()(T* ptr) const { Delete(ptr); }
   };
 
+  template <typename T>
+  using uptr = std::unique_ptr<T, Deleter<T>>;
+
   template <typename T, typename... Args>
   static auto MakeUnique(size_t alignment, size_t extra_bytes,
                          Args&&... args) {
-    return std::unique_ptr<T, Deleter<T>>(
-        New<T>(alignment, extra_bytes, std::forward<Args>(args)...));
+    return uptr<T>(New<T>(alignment, extra_bytes, std::forward<Args>(args)...));
   }
 
   static void Allocate(void** ptr, uint32_t alignment, size_t size) {

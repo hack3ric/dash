@@ -123,8 +123,8 @@ struct Seg_array {
 template <class T>
 struct Directory {
   static const size_t kDefaultDirectorySize = 1024;
-  std::unique_ptr<Seg_array<T>, Allocator::Deleter<Seg_array<T>>> sa;
-  std::unique_ptr<Seg_array<T>, Allocator::Deleter<Seg_array<T>>> new_sa;
+  Allocator::uptr<Seg_array<T>> sa;
+  Allocator::uptr<Seg_array<T>> new_sa;
   size_t capacity;
   bool lock;
   int sema = 0;
@@ -234,7 +234,7 @@ class CCEH : public Hash<T> {
   void getNumber() { dir->get_item_num(); }
 
  private:
-  std::unique_ptr<Directory<T>, Allocator::Deleter<Directory<T>>> dir;
+  Allocator::uptr<Directory<T>> dir;
   std::array<log_entry<T>, kLogNum> log;
   size_t seg_num;
   size_t restart;
