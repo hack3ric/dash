@@ -21,8 +21,10 @@ set(libs_to_link
   pthread gflags)
 
 add_executable(test_pmem src/test_pmem.cpp)
+add_executable(test_pmem_refactored src/test_pmem_refactored.cpp)
 add_executable(example src/example.cpp)
 add_executable(var_example src/var_example.cpp)
 target_link_libraries(test_pmem PRIVATE ${libs_to_link})
+target_link_libraries(test_pmem_refactored PRIVATE ${libs_to_link})
 target_link_libraries(example PRIVATE ${libs_to_link})
 target_link_libraries(var_example PRIVATE ${libs_to_link})
