@@ -24,7 +24,7 @@ deadlock caused by sudden system failure.
 #include "../../util/pair.h"
 #include "../../util/utils.h"
 #include "../Hash.h"
-#include "../allocator.h"
+#include "../allocator_new.h"
 
 #define INPLACE 1
 #define EPOCH 1
@@ -503,7 +503,7 @@ template <class T>
 int CCEH<T>::Insert(T key, Value_t value, bool is_in_epoch) {
   if (!is_in_epoch) {
 #ifdef EPOCH
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
 #endif
     return Insert(key, value);
   }
@@ -580,7 +580,7 @@ template <class T>
 bool CCEH<T>::Delete(T key, bool is_in_epoch) {
   if (!is_in_epoch) {
 #ifdef EPOCH
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
 #endif
     return Delete(key);
   }
@@ -645,7 +645,7 @@ template <class T>
 bool CCEH<T>::Get(T key, Value_t* value, bool is_in_epoch) {
   if (is_in_epoch) {
 #ifdef EPOCH
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
 #endif
     return Get(key, value);
   }
