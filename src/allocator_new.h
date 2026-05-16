@@ -110,7 +110,5 @@ class Allocator {
   Allocator() = default;
   EpochManager epoch_manager_{};
   GarbageList garbage_list_{};
-  static std::unique_ptr<Allocator> instance_;
+  static inline std::unique_ptr<Allocator> instance_{};
 };
-
-std::unique_ptr<Allocator> Allocator::instance_;
