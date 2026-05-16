@@ -229,7 +229,7 @@ class CCEH : public Hash<T> {
   void Lock_Directory();
   void Unlock_Directory();
   void TX_Swap(void** entry, Segment<T>** new_seg);
-  void getNumber() { dir->get_item_num(); }
+  void GetNumber() { dir->get_item_num(); }
 
   Directory<T>* dir;
   log_entry log[LOG_NUM];

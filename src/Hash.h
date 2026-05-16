@@ -33,7 +33,7 @@ class Hash {
   virtual bool Delete(T, bool) = 0;
   virtual bool Get(T, Value_t*) = 0;
   virtual bool Get(T key, Value_t*, bool is_in_epoch) = 0;
-  virtual void getNumber() = 0;
+  virtual void GetNumber() = 0;
 };
 
 #endif  // _HASH_INTERFACE_H_

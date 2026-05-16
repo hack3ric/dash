@@ -28,9 +28,9 @@ deadlock caused by sudden system failure.
 #include "../Hash.h"
 #include "../allocator_new.h"
 
-constexpr bool kInplace = true;
-constexpr bool kUseEpoch = false;
-constexpr size_t kLogNum = 1024;
+constexpr bool inplace = true;
+constexpr bool use_epoch = false;
+constexpr size_t log_capacity = 1024;
 
 namespace cceh {
 
@@ -47,60 +47,59 @@ template <class T>
 struct Segment;
 
 template <class T>
-struct log_entry {
+struct LogEntry {
   uint64_t lock = 0;
-  Segment<T>* temp = nullptr;
+  Segment<T>* pending = nullptr;
 
-  void Lock_log() {
-    uint64_t temp_val = 0;
-    while (!CAS(&lock, &temp_val, 1)) {
-      temp_val = 0;
+  void LockLog() {
+    uint64_t expected = 0;
+    while (!CAS(&lock, &expected, 1)) {
+      expected = 0;
     }
   }
 
-  void Unlock_log() { lock = 0; }
+  void UnlockLog() { lock = 0; }
 };
 
 // const size_t kCacheLineSize = 64;
-constexpr size_t kSegmentBits = 8;
-constexpr size_t kMask = (1 << kSegmentBits) - 1;
-constexpr size_t kShift = kSegmentBits;
-constexpr size_t kSegmentSize = (1 << kSegmentBits) * 16 * 4;
-constexpr size_t kNumPairPerCacheLine = kCacheLineSize / 16;
-constexpr size_t kNumCacheLine = 4;
+constexpr size_t segment_bits = 8;
+constexpr size_t segment_mask = (1 << segment_bits) - 1;
+constexpr size_t segment_size = (1 << segment_bits) * 16 * 4;
+constexpr size_t pairs_per_cacheline = kCacheLineSize / 16;
+constexpr size_t num_cache_lines = 4;
 
 // uint64_t clflushCount;
 
-inline bool var_compare(const char* str1, const char* str2, size_t len1, size_t len2) {
+inline bool VarEqual(const char* str1, const char* str2, size_t len1, size_t len2) {
   if (len1 != len2) return false;
   return !memcmp(str1, str2, len1);
 }
 
 template <class T>
 struct Segment {
-  static const size_t kNumSlot = kSegmentSize / sizeof(Pair<T>);
+  static const size_t num_slots = segment_size / sizeof(Pair<T>);
 
-  Segment(void) : local_depth{0}, sema{0}, count{0}, seg_lock{0}, mutex() {
-    memset(static_cast<void*>(slots_), 255, sizeof(Pair<T>) * kNumSlot);
+  Segment() : local_depth{0}, sema{0}, count{0}, seg_lock{0}, mutex() {
+    memset(static_cast<void*>(slots_), 255, sizeof(Pair<T>) * num_slots);
   }
 
   Segment(size_t depth)
       : local_depth{depth}, sema{0}, count{0}, seg_lock{0}, mutex() {
-    memset(static_cast<void*>(slots_), 255, sizeof(Pair<T>) * kNumSlot);
+    memset(static_cast<void*>(slots_), 255, sizeof(Pair<T>) * num_slots);
   }
 
   ~Segment() = default;
 
   InsertResult Insert(T, Value_t, size_t, size_t);
-  SplitInsertResult Insert4split(T, Value_t, size_t);
+  SplitInsertResult InsertForSplit(T, Value_t, size_t);
   bool Put(T, Value_t, size_t);
-  Segment<T>** Split(size_t, log_entry<T>*);
+  Segment<T>** Split(size_t, LogEntry<T>*);
 
-  void release_lock() { mutex.unlock(); }
+  void ReleaseLock() { mutex.unlock(); }
 
-  bool try_get_lock() { return mutex.try_lock(); }
+  bool TryGetLock() { return mutex.try_lock(); }
 
-  Pair<T> slots_[kNumSlot];
+  Pair<T> slots_[num_slots];
   size_t local_depth;
   int64_t sema = 0;
   size_t pattern = 0;
@@ -110,34 +109,34 @@ struct Segment {
 };
 
 template <class T>
-struct Seg_array {
-  using seg_p = Segment<T>*;
+struct SegArray {
+  using SegPtr = Segment<T>*;
   size_t global_depth;
 
-  seg_p* entries() {
-    return reinterpret_cast<seg_p*>(reinterpret_cast<char*>(this) +
-                                    sizeof(Seg_array));
+  SegPtr* entries() {
+    return reinterpret_cast<SegPtr*>(reinterpret_cast<char*>(this) +
+                                    sizeof(SegArray));
   }
 };
 
 template <class T>
 struct Directory {
-  static const size_t kDefaultDirectorySize = 1024;
-  Allocator::uptr<Seg_array<T>> sa;
-  Allocator::uptr<Seg_array<T>> new_sa;
+  static const size_t default_dir_size = 1024;
+  Allocator::uptr<SegArray<T>> sa;
+  Allocator::uptr<SegArray<T>> new_sa;
   size_t capacity;
   bool lock;
   int sema = 0;
 
-  Directory(Seg_array<T>* _sa) {
-    capacity = kDefaultDirectorySize;
+  Directory(SegArray<T>* _sa) {
+    capacity = default_dir_size;
     sa.reset(_sa);
     new_sa = nullptr;
     lock = false;
     sema = 0;
   }
 
-  Directory(size_t size, Seg_array<T>* _sa) {
+  Directory(size_t size, SegArray<T>* _sa) {
     capacity = size;
     sa.reset(_sa);
     new_sa = nullptr;
@@ -147,29 +146,29 @@ struct Directory {
 
   ~Directory() = default;
 
-  void get_item_num() {
+  void GetItemCount() {
     size_t count = 0;
     size_t seg_num = 0;
-    Seg_array<T>* seg = sa.get();
-    Segment<T>** dir_entry = seg->entries();
-    Segment<T>* ss;
-    auto global_depth = seg->global_depth;
+    SegArray<T>* seg_array = sa.get();
+    Segment<T>** dir_entry = seg_array->entries();
+    Segment<T>* cur_seg;
+    auto global_depth = seg_array->global_depth;
     size_t depth_diff;
     for (size_t i = 0; i < capacity;) {
-      ss = dir_entry[i];
-      depth_diff = global_depth - ss->local_depth;
+      cur_seg = dir_entry[i];
+      depth_diff = global_depth - cur_seg->local_depth;
 
-      for (size_t i = 0; i < Segment<T>::kNumSlot; ++i) {
+      for (size_t i = 0; i < Segment<T>::num_slots; ++i) {
         if constexpr (std::is_pointer_v<T>) {
-          if ((ss->slots_[i].key !=   (T)INVALID) &&
-              ((h(ss->slots_[i].key->key, ss->slots_[i].key->length) >>
-                (64 - ss->local_depth)) == ss->pattern)) {
+          if ((cur_seg->slots_[i].key !=   (T)INVALID) &&
+              ((h(cur_seg->slots_[i].key->key, cur_seg->slots_[i].key->length) >>
+                (64 - cur_seg->local_depth)) == cur_seg->pattern)) {
             ++count;
           }
         } else {
-          if ((ss->slots_[i].key !=   (T)INVALID) &&
-              ((h(&ss->slots_[i].key, sizeof(Key_t)) >> (64 - ss->local_depth)) ==
-               ss->pattern)) {
+          if ((cur_seg->slots_[i].key !=   (T)INVALID) &&
+              ((h(&cur_seg->slots_[i].key, sizeof(Key_t)) >> (64 - cur_seg->local_depth)) ==
+               cur_seg->pattern)) {
             ++count;
           }
         }
@@ -183,12 +182,12 @@ struct Directory {
               << std::endl;
   }
 
-  bool Acquire(void) {
+  bool Acquire() {
     bool unlocked = false;
     return CAS(&lock, &unlocked, true);
   }
 
-  bool Release(void) {
+  bool Release() {
     bool locked = true;
     return CAS(&lock, &locked, false);
   }
@@ -216,9 +215,9 @@ struct DirectoryGuard {
 template <class T>
 class CCEH : public Hash<T> {
  public:
-  CCEH(void);
+  CCEH();
   CCEH(size_t);
-  ~CCEH(void);
+  ~CCEH();
   int Insert(T key, Value_t value);
   int Insert(T key, Value_t value, bool);
   bool Delete(T);
@@ -226,16 +225,16 @@ class CCEH : public Hash<T> {
   bool Get(T, Value_t*);
   bool Get(T key, Value_t*, bool is_in_epoch);
   Value_t FindAnyway(T);
-  [[nodiscard]] double Utilization(void);
-  [[nodiscard]] size_t Capacity(void);
-  void Directory_Doubling(size_t x, Segment<T>* s0, Segment<T>** s1);
-  void Directory_Update(size_t x, Segment<T>* s0, Segment<T>** s1);
-  void TX_Swap(void** entry, Segment<T>** new_seg);
-  void getNumber() { dir->get_item_num(); }
+  [[nodiscard]] double Utilization();
+  [[nodiscard]] size_t Capacity();
+  void DirectoryDouble(size_t x, Segment<T>* old_seg, Segment<T>** new_seg);
+  void DirectoryUpdate(size_t x, Segment<T>* old_seg, Segment<T>** new_seg);
+  void TxSwap(void** entry, Segment<T>** new_seg);
+  void GetNumber() { dir->GetItemCount(); }
 
  private:
   Allocator::uptr<Directory<T>> dir;
-  std::array<log_entry<T>, kLogNum> log;
+  std::array<LogEntry<T>, log_capacity> log;
   size_t seg_num;
   size_t restart;
 };
@@ -252,16 +251,16 @@ InsertResult Segment<T>::Insert(T key, Value_t value, size_t loc,
       sema == -1) {
     return InsertResult::Redirect;
   }
-  auto ret = InsertResult::NeedSplit;
-  T LOCK =   (T)INVALID;
+  auto result = InsertResult::NeedSplit;
+  T expected =   (T)INVALID;
 
   /*uniqueness check*/
   auto slot = loc;
-  for (size_t i = 0; i < kNumCacheLine * kNumPairPerCacheLine; ++i) {
-    slot = (loc + i) % kNumSlot;
+  for (size_t i = 0; i < num_cache_lines * pairs_per_cacheline; ++i) {
+    slot = (loc + i) % num_slots;
     if constexpr (std::is_pointer_v<T>) {
       if (slots_[slot].key !=   (T)INVALID &&
-          (var_compare(key->key, slots_[slot].key->key, key->length,
+          (VarEqual(key->key, slots_[slot].key->key, key->length,
                        slots_[slot].key->length))) {
         return InsertResult::Duplicate;
       }
@@ -272,44 +271,44 @@ InsertResult Segment<T>::Insert(T key, Value_t value, size_t loc,
     }
   }
 
-  for (size_t i = 0; i < kNumPairPerCacheLine * kNumCacheLine; ++i) {
-    slot = (loc + i) % kNumSlot;
+  for (size_t i = 0; i < pairs_per_cacheline * num_cache_lines; ++i) {
+    slot = (loc + i) % num_slots;
     if constexpr (std::is_pointer_v<T>) {
       if ((slots_[slot].key !=   (T)INVALID) &&
           ((h(slots_[slot].key->key, slots_[slot].key->length) >>
             (64 - local_depth)) != pattern)) {
         slots_[slot].key =   (T)INVALID;
       }
-      if (CAS(&slots_[slot].key, &LOCK, SENTINEL)) {
+      if (CAS(&slots_[slot].key, &expected, SENTINEL)) {
         slots_[slot].value = value;
         slots_[slot].key = key;
-        ret = InsertResult::Success;
+        result = InsertResult::Success;
         break;
       } else {
-        LOCK =   (T)INVALID;
+        expected =   (T)INVALID;
       }
     } else {
       if ((h(&slots_[slot].key, sizeof(Key_t)) >>
            (64 - local_depth)) != pattern) {
         slots_[slot].key = INVALID;
       }
-      if (CAS(&slots_[slot].key, &LOCK, SENTINEL)) {
+      if (CAS(&slots_[slot].key, &expected, SENTINEL)) {
         slots_[slot].value = value;
         slots_[slot].key = key;
-        ret = InsertResult::Success;
+        result = InsertResult::Success;
         break;
       } else {
-        LOCK = INVALID;
+        expected = INVALID;
       }
     }
   }
-  return ret;
+  return result;
 }
 
 template <class T>
-SplitInsertResult Segment<T>::Insert4split(T key, Value_t value, size_t loc) {
-  for (size_t i = 0; i < kNumPairPerCacheLine * kNumCacheLine; ++i) {
-    auto slot = (loc + i) % kNumSlot;
+SplitInsertResult Segment<T>::InsertForSplit(T key, Value_t value, size_t loc) {
+  for (size_t i = 0; i < pairs_per_cacheline * num_cache_lines; ++i) {
+    auto slot = (loc + i) % num_slots;
     if (slots_[slot].key ==   (T)INVALID) {
       slots_[slot].key = key;
       slots_[slot].value = value;
@@ -320,8 +319,8 @@ SplitInsertResult Segment<T>::Insert4split(T key, Value_t value, size_t loc) {
 }
 
 template <class T>
-Segment<T>** Segment<T>::Split(size_t key_hash, log_entry<T>* log) {
-  if (!try_get_lock()) {
+Segment<T>** Segment<T>::Split(size_t key_hash, LogEntry<T>* log) {
+  if (!TryGetLock()) {
     return nullptr;
   }
   sema = -1;
@@ -329,14 +328,14 @@ Segment<T>** Segment<T>::Split(size_t key_hash, log_entry<T>* log) {
   size_t new_pattern = (pattern << 1) + 1;
   size_t old_pattern = pattern << 1;
 
-  size_t log_pos = key_hash % kLogNum;
-  log[log_pos].Lock_log();
+  size_t log_pos = key_hash % log_capacity;
+  log[log_pos].LockLog();
 
-  log[log_pos].temp =
+  log[log_pos].pending =
       Allocator::New<Segment<T>>(kCacheLineSize, 0, local_depth + 1);
-  Segment<T>* split = log[log_pos].temp;
+  Segment<T>* split = log[log_pos].pending;
 
-  for (size_t i = 0; i < kNumSlot; ++i) {
+  for (size_t i = 0; i < num_slots; ++i) {
     size_t key_hash;
     if constexpr (std::is_pointer_v<T>) {
       if (slots_[i].key !=   (T)INVALID) {
@@ -347,26 +346,26 @@ Segment<T>** Segment<T>::Split(size_t key_hash, log_entry<T>* log) {
     }
     if ((slots_[i].key !=   (T)INVALID) &&
         (key_hash >> (64 - local_depth - 1) == new_pattern)) {
-      split->Insert4split(slots_[i].key, slots_[i].value,
-                          (key_hash & kMask) * kNumPairPerCacheLine);
+      split->InsertForSplit(slots_[i].key, slots_[i].value,
+                          (key_hash & segment_mask) * pairs_per_cacheline);
       if constexpr (std::is_pointer_v<T>) {
         slots_[i].key =   (T)INVALID;
       }
     }
   }
 
-  return &log[log_pos].temp;
+  return &log[log_pos].pending;
 }
 
 template <class T>
-CCEH<T>::CCEH(size_t initCap) {
-  dir = Allocator::MakeUnique<Directory<T>>(kCacheLineSize, 0, initCap, nullptr);
+CCEH<T>::CCEH(size_t initial_capacity) {
+  dir = Allocator::MakeUnique<Directory<T>>(kCacheLineSize, 0, initial_capacity, nullptr);
 
   auto new_sa =
-      Allocator::New<Seg_array<T>>(kCacheLineSize,
-                                   sizeof(typename Seg_array<T>::seg_p) * initCap);
-  new_sa->global_depth = static_cast<size_t>(log2(initCap));
-  memset(new_sa->entries(), 0, initCap * sizeof(typename Seg_array<T>::seg_p));
+      Allocator::New<SegArray<T>>(kCacheLineSize,
+                                   sizeof(typename SegArray<T>::SegPtr) * initial_capacity);
+  new_sa->global_depth = static_cast<size_t>(log2(initial_capacity));
+  memset(new_sa->entries(), 0, initial_capacity * sizeof(typename SegArray<T>::SegPtr));
   dir->sa.reset(new_sa);
 
   auto dir_entry = dir->sa->entries();
@@ -376,9 +375,9 @@ CCEH<T>::CCEH(size_t initCap) {
     dir_entry[i]->pattern = i;
   }
   /*clear the log area*/
-  for (size_t i = 0; i < kLogNum; ++i) {
+  for (size_t i = 0; i < log_capacity; ++i) {
     log[i].lock = 0;
-    log[i].temp = nullptr;
+    log[i].pending = nullptr;
   }
 
   seg_num = 0;
@@ -386,62 +385,62 @@ CCEH<T>::CCEH(size_t initCap) {
 }
 
 template <class T>
-CCEH<T>::CCEH(void) {
-  std::cout << "Reintialize Up for CCEH" << std::endl;
+CCEH<T>::CCEH() {
+  std::cout << "Reinitialize for CCEH" << std::endl;
 }
 
 template <class T>
 CCEH<T>::~CCEH() = default;
 
 template <class T>
-void CCEH<T>::TX_Swap(void** entry, Segment<T>** new_seg) {
+void CCEH<T>::TxSwap(void** entry, Segment<T>** new_seg) {
   *entry = *new_seg;
   *new_seg = nullptr;
 }
 
 template <class T>
-void CCEH<T>::Directory_Doubling(size_t x, Segment<T>* s0, Segment<T>** s1) {
+void CCEH<T>::DirectoryDouble(size_t x, Segment<T>* old_seg, Segment<T>** new_seg) {
   auto* sa = dir->sa.get();
   Segment<T>** d = sa->entries();
   auto global_depth = sa->global_depth;
 
   size_t new_capacity = 2 * dir->capacity;
   auto new_seg_array =
-      Allocator::New<Seg_array<T>>(kCacheLineSize,
-                                   sizeof(typename Seg_array<T>::seg_p) * new_capacity);
+      Allocator::New<SegArray<T>>(kCacheLineSize,
+                                   sizeof(typename SegArray<T>::SegPtr) * new_capacity);
   new_seg_array->global_depth = static_cast<size_t>(log2(new_capacity));
   memset(new_seg_array->entries(), 0,
-         new_capacity * sizeof(typename Seg_array<T>::seg_p));
+         new_capacity * sizeof(typename SegArray<T>::SegPtr));
   dir->new_sa.reset(new_seg_array);
-  auto dd = dir->new_sa->entries();
+  auto doubled_entries = dir->new_sa->entries();
 
   for (size_t i = 0; i < dir->capacity; ++i) {
-    dd[2 * i] = d[i];
-    dd[2 * i + 1] = d[i];
+    doubled_entries[2 * i] = d[i];
+    doubled_entries[2 * i + 1] = d[i];
   }
 
-  TX_Swap(reinterpret_cast<void**>(&dd[2 * x + 1]), s1);
+  TxSwap(reinterpret_cast<void**>(&doubled_entries[2 * x + 1]), new_seg);
 
   dir->sa = std::move(dir->new_sa);
   dir->capacity *= 2;
 }
 
 template <class T>
-void CCEH<T>::Directory_Update(size_t x, Segment<T>* s0, Segment<T>** s1) {
+void CCEH<T>::DirectoryUpdate(size_t x, Segment<T>* old_seg, Segment<T>** new_seg) {
   Segment<T>** dir_entry = dir->sa->entries();
   auto global_depth = dir->sa->global_depth;
-    auto depth_diff = global_depth - s0->local_depth;
+    auto depth_diff = global_depth - old_seg->local_depth;
     if (depth_diff == 1) {
       if (x % 2 == 0) {
-        TX_Swap(reinterpret_cast<void**>(&dir_entry[x + 1]), s1);
+        TxSwap(reinterpret_cast<void**>(&dir_entry[x + 1]), new_seg);
       } else {
-        TX_Swap(reinterpret_cast<void**>(&dir_entry[x]), s1);
+        TxSwap(reinterpret_cast<void**>(&dir_entry[x]), new_seg);
       }
     } else {
-      size_t chunk_size = pow(2, global_depth - (s0->local_depth));
+      size_t chunk_size = pow(2, global_depth - (old_seg->local_depth));
       x = x - (x % chunk_size);
       size_t base = chunk_size / 2;
-    TX_Swap(reinterpret_cast<void**>(&dir_entry[x + base + base - 1]), s1);
+    TxSwap(reinterpret_cast<void**>(&dir_entry[x + base + base - 1]), new_seg);
     auto seg_ptr = dir_entry[x + base + base - 1];
     for (int i = base - 2; i >= 0; --i) {
       dir_entry[x + base + i] = seg_ptr;
@@ -452,8 +451,8 @@ void CCEH<T>::Directory_Update(size_t x, Segment<T>* s0, Segment<T>** s1) {
 template <class T>
 int CCEH<T>::Insert(T key, Value_t value, bool is_in_epoch) {
   if (!is_in_epoch) {
-    if constexpr (kUseEpoch) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+    if constexpr (use_epoch) {
+      auto epoch_guard = Allocator::AcquireEpochGuard();
     }
     return Insert(key, value);
   }
@@ -469,30 +468,30 @@ int CCEH<T>::Insert(T key, Value_t value) {
     } else {
       key_hash = h(&key, sizeof(key));
     }
-    auto y = (key_hash & kMask) * kNumPairPerCacheLine;
+    auto y = (key_hash & segment_mask) * pairs_per_cacheline;
 
     for (;;) {
-      auto old_sa = dir->sa.get();
-      if (old_sa != dir->sa.get()) {
+      auto snapshot = dir->sa.get();
+      if (snapshot != dir->sa.get()) {
         continue;
       }
-      auto x = (key_hash >> (64 - old_sa->global_depth));
-      auto dir_entry = old_sa->entries();
+      auto x = (key_hash >> (64 - snapshot->global_depth));
+      auto dir_entry = snapshot->entries();
       Segment<T>* target = dir_entry[x];
 
-      auto ret = target->Insert(key, value, y, key_hash);
+      auto result = target->Insert(key, value, y, key_hash);
 
-      if (ret == InsertResult::Duplicate) return -1;
+      if (result == InsertResult::Duplicate) return -1;
 
-      if (ret == InsertResult::NeedSplit) {
+      if (result == InsertResult::NeedSplit) {
         auto s = target->Split(key_hash, log.data());
         if (s == nullptr) {
           continue;
         }
 
-        auto ss = *s;
-        ss->pattern =
-            ((key_hash >> (64 - ss->local_depth + 1)) << 1) +
+        auto split_seg = *s;
+        split_seg->pattern =
+            ((key_hash >> (64 - split_seg->local_depth + 1)) << 1) +
             1;
 
         // Directory management
@@ -504,22 +503,22 @@ int CCEH<T>::Insert(T key, Value_t value) {
           x = (key_hash >> (64 - sa->global_depth));
           target = dir_entry[x];
           if (target->local_depth < sa->global_depth) {
-            Directory_Update(x, target, s);
+            DirectoryUpdate(x, target, s);
           } else {  // directory doubling
-            Directory_Doubling(x, target, s);
+            DirectoryDouble(x, target, s);
           }
           target->pattern =
               (key_hash >> (64 - target->local_depth)) << 1;
           target->local_depth += 1;
-          if constexpr (kInplace) {
+          if constexpr (inplace) {
             target->sema = 0;
-            target->release_lock();
+            target->ReleaseLock();
           }
         }  // DirectoryGuard released here
-        size_t log_pos = key_hash % kLogNum;
-        log[log_pos].Unlock_log();
+        size_t log_pos = key_hash % log_capacity;
+        log[log_pos].UnlockLog();
         continue;
-      } else if (ret == InsertResult::Redirect) {
+      } else if (result == InsertResult::Redirect) {
         break;  // restart outer loop with fresh key_hash
       }
 
@@ -531,8 +530,8 @@ int CCEH<T>::Insert(T key, Value_t value) {
 template <class T>
 bool CCEH<T>::Delete(T key, bool is_in_epoch) {
   if (!is_in_epoch) {
-    if constexpr (kUseEpoch) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+    if constexpr (use_epoch) {
+      auto epoch_guard = Allocator::AcquireEpochGuard();
     }
     return Delete(key);
   }
@@ -547,41 +546,41 @@ bool CCEH<T>::Delete(T key) {
   } else {
     key_hash = h(&key, sizeof(key));
   }
-  auto y = (key_hash & kMask) * kNumPairPerCacheLine;
+  auto y = (key_hash & segment_mask) * pairs_per_cacheline;
 
   for (;;) {
-    auto old_sa = dir->sa.get();
-    if (old_sa != dir->sa.get()) {
+    auto snapshot = dir->sa.get();
+    if (snapshot != dir->sa.get()) {
       continue;
     }
-    auto x = (key_hash >> (64 - old_sa->global_depth));
-    auto dir_entry = old_sa->entries();
-    Segment<T>* dir_ = dir_entry[x];
+    auto x = (key_hash >> (64 - snapshot->global_depth));
+    auto dir_entry = snapshot->entries();
+    Segment<T>* segment = dir_entry[x];
 
-    auto sema = dir_->sema;
+    auto sema = segment->sema;
     if (sema == -1) {
       continue;
     }
-    std::unique_lock<std::shared_mutex> lock(dir_->mutex);
+    std::unique_lock<std::shared_mutex> lock(segment->mutex);
 
-    if ((key_hash >> (64 - dir_->local_depth)) !=
-            dir_->pattern ||
-        dir_->sema == -1) {
+    if ((key_hash >> (64 - segment->local_depth)) !=
+            segment->pattern ||
+        segment->sema == -1) {
       continue;
     }
 
-    for (size_t i = 0; i < kNumPairPerCacheLine * kNumCacheLine; ++i) {
-      auto slot = (y + i) % Segment<T>::kNumSlot;
+    for (size_t i = 0; i < pairs_per_cacheline * num_cache_lines; ++i) {
+      auto slot = (y + i) % Segment<T>::num_slots;
       if constexpr (std::is_pointer_v<T>) {
-        if ((dir_->slots_[slot].key !=   (T)INVALID) &&
-            (var_compare(key->key, dir_->slots_[slot].key->key, key->length,
-                         dir_->slots_[slot].key->length))) {
-          dir_->slots_[slot].key =   (T)INVALID;
+        if ((segment->slots_[slot].key !=   (T)INVALID) &&
+            (VarEqual(key->key, segment->slots_[slot].key->key, key->length,
+                         segment->slots_[slot].key->length))) {
+          segment->slots_[slot].key =   (T)INVALID;
           return true;
         }
       } else {
-        if (dir_->slots_[slot].key == key) {
-          dir_->slots_[slot].key =   (T)INVALID;
+        if (segment->slots_[slot].key == key) {
+          segment->slots_[slot].key =   (T)INVALID;
           return true;
         }
       }
@@ -593,8 +592,8 @@ bool CCEH<T>::Delete(T key) {
 template <class T>
 bool CCEH<T>::Get(T key, Value_t* value, bool is_in_epoch) {
   if (is_in_epoch) {
-    if constexpr (kUseEpoch) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+    if constexpr (use_epoch) {
+      auto epoch_guard = Allocator::AcquireEpochGuard();
     }
     return Get(key, value);
   }
@@ -609,41 +608,41 @@ bool CCEH<T>::Get(T key, Value_t* value_) {
   } else {
     key_hash = h(&key, sizeof(key));
   }
-  auto y = (key_hash & kMask) * kNumPairPerCacheLine;
+  auto y = (key_hash & segment_mask) * pairs_per_cacheline;
 
   for (;;) {
-    auto old_sa = dir->sa.get();
-    if (old_sa != dir->sa.get()) {
+    auto snapshot = dir->sa.get();
+    if (snapshot != dir->sa.get()) {
       continue;
     }
-    auto x = (key_hash >> (64 - old_sa->global_depth));
-    auto dir_entry = old_sa->entries();
-    Segment<T>* dir_ = dir_entry[x];
+    auto x = (key_hash >> (64 - snapshot->global_depth));
+    auto dir_entry = snapshot->entries();
+    Segment<T>* segment = dir_entry[x];
 
-    std::shared_lock<std::shared_mutex> lock(dir_->mutex, std::try_to_lock);
+    std::shared_lock<std::shared_mutex> lock(segment->mutex, std::try_to_lock);
     if (!lock) {
       continue;
     }
 
-    if ((key_hash >> (64 - dir_->local_depth)) !=
-            dir_->pattern ||
-        dir_->sema == -1) {
+    if ((key_hash >> (64 - segment->local_depth)) !=
+            segment->pattern ||
+        segment->sema == -1) {
       continue;
     }
 
-    for (size_t i = 0; i < kNumPairPerCacheLine * kNumCacheLine; ++i) {
-      auto slot = (y + i) % Segment<T>::kNumSlot;
+    for (size_t i = 0; i < pairs_per_cacheline * num_cache_lines; ++i) {
+      auto slot = (y + i) % Segment<T>::num_slots;
       if constexpr (std::is_pointer_v<T>) {
-        if ((dir_->slots_[slot].key !=   (T)INVALID) &&
-            (var_compare(key->key, dir_->slots_[slot].key->key, key->length,
-                         dir_->slots_[slot].key->length))) {
-          auto value = dir_->slots_[slot].value;
+        if ((segment->slots_[slot].key !=   (T)INVALID) &&
+            (VarEqual(key->key, segment->slots_[slot].key->key, key->length,
+                         segment->slots_[slot].key->length))) {
+          auto value = segment->slots_[slot].value;
           *value_ = value;
           return true;
         }
       } else {
-        if (dir_->slots_[slot].key == key) {
-          auto value = dir_->slots_[slot].value;
+        if (segment->slots_[slot].key == key) {
+          auto value = segment->slots_[slot].value;
           *value_ = value;
           return true;
         }

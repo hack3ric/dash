@@ -1224,7 +1224,7 @@ class Finger_EH : public Hash<T> {
   void ShutDown() {
     clean = true;
   }
-  void getNumber() {
+  void GetNumber() {
     std::cout << "The size of the bucket is " << sizeof(struct Bucket<T>) << std::endl;
     size_t _count = 0;
     size_t seg_count = 0;

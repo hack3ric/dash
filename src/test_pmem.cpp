@@ -219,7 +219,7 @@ void concurr_insert(struct range *_range, Hash<T> *index) {
     spin_wait();
 
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         index->Insert(key_array[j], DEFAULT, true);
@@ -228,7 +228,7 @@ void concurr_insert(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         index->Insert(key_array[i], DEFAULT, true);
       }
@@ -241,7 +241,7 @@ void concurr_insert(struct range *_range, Hash<T> *index) {
 
     spin_wait();
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         var_key = reinterpret_cast<T>(workload + string_key_size * j);
@@ -251,7 +251,7 @@ void concurr_insert(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         var_key = reinterpret_cast<T>(workload + string_key_size * i);
         index->Insert(var_key, DEFAULT, true);
@@ -282,7 +282,7 @@ void concurr_search_sample(struct range *_range, Hash<T> *index) {
     spin_wait();
 
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         index->Get(key_array[j], &value, true);
@@ -292,7 +292,7 @@ void concurr_search_sample(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         index->Get(key_array[i], &value, true);
         operation_record[curr_index].number++;
@@ -306,7 +306,7 @@ void concurr_search_sample(struct range *_range, Hash<T> *index) {
 
     spin_wait();
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         var_key = reinterpret_cast<T>(workload + string_key_size * j);
@@ -317,7 +317,7 @@ void concurr_search_sample(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         var_key = reinterpret_cast<T>(workload + string_key_size * i);
         index->Get(var_key, &value, true);
@@ -347,7 +347,7 @@ void concurr_insert_sample(struct range *_range, Hash<T> *index) {
     spin_wait();
 
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         index->Insert(key_array[j], DEFAULT, true);
@@ -357,7 +357,7 @@ void concurr_insert_sample(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         index->Insert(key_array[i], DEFAULT, true);
         operation_record[curr_index].number++;
@@ -371,7 +371,7 @@ void concurr_insert_sample(struct range *_range, Hash<T> *index) {
 
     spin_wait();
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         var_key = reinterpret_cast<T>(workload + string_key_size * j);
@@ -382,7 +382,7 @@ void concurr_insert_sample(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         var_key = reinterpret_cast<T>(workload + string_key_size * i);
         index->Insert(var_key, DEFAULT, true);
@@ -411,7 +411,7 @@ void concurr_search(struct range *_range, Hash<T> *index) {
     spin_wait();
 
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         if (index->Get(key_array[j], &value, true) == false) not_found++;
@@ -420,7 +420,7 @@ void concurr_search(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         if (index->Get(key_array[i], &value, true) == false) not_found++;
       }
@@ -433,7 +433,7 @@ void concurr_search(struct range *_range, Hash<T> *index) {
 
     spin_wait();
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         var_key = reinterpret_cast<T>(workload + string_key_size * j);
@@ -443,7 +443,7 @@ void concurr_search(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         var_key = reinterpret_cast<T>(workload + string_key_size * i);
         if (index->Get(var_key, &value, true) == false) not_found++;
@@ -534,7 +534,7 @@ void concurr_delete(struct range *_range, Hash<T> *index) {
     spin_wait();
 
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         if (!index->Delete(key_array[j], true)) not_found++;
@@ -543,7 +543,7 @@ void concurr_delete(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         if (!index->Delete(key_array[i], true)) not_found++;
       }
@@ -556,7 +556,7 @@ void concurr_delete(struct range *_range, Hash<T> *index) {
 
     spin_wait();
     while (i < round) {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
       for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
         var_key = reinterpret_cast<T>(workload + string_key_size * j);
@@ -566,7 +566,7 @@ void concurr_delete(struct range *_range, Hash<T> *index) {
     }
 
     {
-      auto epoch_guard = Allocator::AquireEpochGuard();
+      auto epoch_guard = Allocator::AcquireEpochGuard();
       for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
         var_key = reinterpret_cast<T>(workload + string_key_size * i);
         if (!index->Delete(var_key, true)) not_found++;
@@ -646,7 +646,7 @@ void mixed(struct range *_range, Hash<T> *index) {
   spin_wait();
 
   while (i < round) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     uint64_t _end = begin + (i + 1) * EPOCH_DURATION;
     for (uint64_t j = begin + i * EPOCH_DURATION; j < _end; ++j) {
       if constexpr (std::is_pointer_v<T>) { /* variable length*/
@@ -670,7 +670,7 @@ void mixed(struct range *_range, Hash<T> *index) {
   }
 
   {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (i = begin + EPOCH_DURATION * round; i < end; ++i) {
       if constexpr (std::is_pointer_v<T>) { /* variable length*/
         key = reinterpret_cast<T>(workload + string_key_size * i);
@@ -978,7 +978,7 @@ void Run() {
       }
     }
 
-    index->getNumber();
+    index->GetNumber();
 
     if (open_epoch == true) {
       GeneralBench<T>(rarray, index, thread_num, operation_num, "Pos_search",
@@ -1014,7 +1014,7 @@ void Run() {
       GeneralBench<T>(rarray, index, thread_num, operation_num, "Delete",
                       &concurr_delete_without_epoch);
     }
-    index->getNumber();
+    index->GetNumber();
   }
 
   /*TODO Free the workload memory*/

@@ -90,7 +90,7 @@ class Allocator {
     Free(static_cast<void*>(ptr));
   }
 
-  static EpochGuard AquireEpochGuard() {
+  static EpochGuard AcquireEpochGuard() {
     return EpochGuard{&instance_->epoch_manager_};
   }
 
