@@ -15,6 +15,7 @@ using DestroyCallback = void (*)(void* callback_context, void* object);
 class Allocator {
  public:
   static void Initialize() {
+    if (instance_ != nullptr) return;
     instance_ = std::unique_ptr<Allocator>(new Allocator());
     instance_->epoch_manager_.Initialize();
     instance_->garbage_list_.Initialize(&instance_->epoch_manager_, 1024 * 8);

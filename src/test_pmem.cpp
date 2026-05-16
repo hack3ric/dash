@@ -96,7 +96,7 @@ Hash<T> *InitializeIndex(int seg_num) {
   Hash<T> *eh;
   if (index_type == "dash-ex") {
     std::cout << "Initialize Dash-EH" << std::endl;
-    Allocator::Initialize();
+    // Allocator::Initialize();
     // eh = new extendible::Finger_EH<T>(seg_num);
     eh = new cceh::CCEH<T>(seg_num);
   }

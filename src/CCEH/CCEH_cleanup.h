@@ -341,6 +341,7 @@ Segment<T>** Segment<T>::Split(size_t key_hash, LogEntry<T>* log) {
 
 template <class T>
 CCEH<T>::CCEH(size_t initial_capacity) {
+  Allocator::Initialize();
   dir = Allocator::MakeUnique<Directory<T>>(kCacheLineSize, 0, initial_capacity,
                                             nullptr);
 
