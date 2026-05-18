@@ -11,7 +11,7 @@
 // libraries.
 
 #include "Hash.h"
-#include "allocator.h"
+#include "allocator_new.h"
 #include "ex_finger.h"
 
 int main() {
@@ -37,7 +37,7 @@ int main() {
   for (uint64_t i = 0; i < 1024; ++i) {
     // Enroll into the epoch, if using one thread, epoch mechanism is actually
     // not needed
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
       auto ret = hash_table->Insert(i * 1024 + j, DEFAULT, true);
       if(ret == -1){ /* -1 means this key already exist in the index => insertion failure*/
@@ -53,7 +53,7 @@ int main() {
   for (uint64_t i = 0; i < 1024; ++i) {
     // Enroll into the epoch, if using one thread, epoch mechanism is actually
     // not needed
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
       auto ret = hash_table->Insert(i * 1024 + j, DEFAULT, true);
       if(ret == -1){
@@ -69,7 +69,7 @@ int main() {
   uint64_t not_found = 0;
   uint64_t not_match_value = 0;
   for (uint64_t i = 0; i < 1024; ++i) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
       if (hash_table->Get(i * 1024 + j, &value, true) == false) {
         not_found++;
@@ -85,7 +85,7 @@ int main() {
 
   // Delete
   for (uint64_t i = 0; i < 1024; ++i) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
       hash_table->Delete(i * 1024 + j, true);
     }

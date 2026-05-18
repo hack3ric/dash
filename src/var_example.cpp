@@ -11,7 +11,7 @@
 // libraries.
 
 #include "Hash.h"
-#include "allocator.h"
+#include "allocator_new.h"
 #include "ex_finger.h"
 
 /*variable-length key experiment*/
@@ -58,7 +58,7 @@ int main() {
   for (uint64_t i = 0; i < 1024; ++i) {
     // Enroll into the epoch, if using one thread, epoch mechanism is actually
     // not needed
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
       string_key* var_key = reinterpret_cast<string_key*>(workload + string_key_size * (i * 1024 + j));
       auto ret = hash_table->Insert(var_key, DEFAULT, true);
@@ -69,13 +69,13 @@ int main() {
   }
 
   std::cout << "already exist for first insert = " << alread_exist << std::endl;
-  
+
   // testing for duplicate insert
   alread_exist = 0;
   for (uint64_t i = 0; i < 1024; ++i) {
     // Enroll into the epoch, if using one thread, epoch mechanism is actually
     // not needed
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
       string_key* var_key = reinterpret_cast<string_key*>(workload + string_key_size * (i * 1024 + j));
       auto ret = hash_table->Insert(var_key, DEFAULT, true);
@@ -92,7 +92,7 @@ int main() {
   uint64_t not_found = 0;
   uint64_t not_match_value = 0;
   for (uint64_t i = 0; i < 1024; ++i) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
     string_key* var_key = reinterpret_cast<string_key*>(workload + string_key_size * (i * 1024 + j));
       if (hash_table->Get(var_key, &value, true) == false) {
@@ -109,7 +109,7 @@ int main() {
 
   // Delete
   for (uint64_t i = 0; i < 1024; ++i) {
-    auto epoch_guard = Allocator::AquireEpochGuard();
+    auto epoch_guard = Allocator::AcquireEpochGuard();
     for (uint64_t j = 0; j < 1024; ++j) {
     string_key* var_key = reinterpret_cast<string_key*>(workload + string_key_size * (i * 1024 + j));
       hash_table->Delete(var_key, true);
