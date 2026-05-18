@@ -119,9 +119,9 @@ inline void SetAffinity(uint32_t idx) {
 // ---------------------------------------------------------------------------
 template <class T>
 Hash<T>* InitializeIndex(int seg_count, const std::string& index_type) {
-  std::cout << "Initialize " << index_type << std::endl;
+  std::cout << "[INIT] Index type : " << index_type << std::endl;
   Hash<T>* eh = new cceh::CCEH<T>(seg_count);
-  std::cout << "Initialization complete" << std::endl;
+  std::cout << "[INIT] Done" << std::endl;
   return eh;
 }
 
@@ -158,7 +158,7 @@ inline void GenerateVarKeys(void* buf, uint64_t n, int length,
 template <class T>
 void PreLoad(uint64_t count, Hash<T>* index, int var_len, void* workload) {
   if (count == 0) return;
-  std::cout << "Start pre-loading workload" << std::endl;
+  std::cout << "[LOAD] Start pre-loading " << count << " keys" << std::endl;
 
   if constexpr (!std::is_pointer_v<T>) {
     auto* keys = static_cast<T*>(workload);
@@ -174,7 +174,7 @@ void PreLoad(uint64_t count, Hash<T>* index, int var_len, void* workload) {
     }
   }
 
-  std::cout << "Finished loading " << count << " keys" << std::endl;
+  std::cout << "[LOAD] Finished" << std::endl;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +313,7 @@ void OpsSearch(ThreadPartition& part, Hash<T>* index, uint64_t epoch_dur) {
     }
   }
 
-  std::cout << "not_found = " << missed << std::endl;
+  std::cout << "  [RESULT] not_found = " << missed << std::endl;
 }
 
 template <class T, bool UseEpoch>
@@ -380,7 +380,7 @@ void OpsDelete(ThreadPartition& part, Hash<T>* index, uint64_t epoch_dur) {
     }
   }
 
-  std::cout << "not_found = " << missed << std::endl;
+  std::cout << "  [RESULT] not_found = " << missed << std::endl;
 }
 
 template <class T, bool UseEpoch>
@@ -456,7 +456,7 @@ void OpsMixed(ThreadPartition& part, Hash<T>* index, uint64_t epoch_dur,
     }
   }
 
-  std::cout << "not_found = " << missed << std::endl;
+  std::cout << "  [RESULT] not_found = " << missed << std::endl;
 }
 
 // Sampling variants – record per-thread operation counts.
@@ -616,8 +616,7 @@ template <class T, typename Fn>
 void GeneralBench(std::vector<ThreadPartition>& partitions, Hash<T>* index,
                   int n_threads, uint64_t total_ops, const std::string& label,
                   Fn&& op_fn) {
-  std::string full_label = label + std::to_string(n_threads);
-  std::cout << full_label << " Begin" << std::endl;
+  std::cout << "\n==================== " << label << " [" << n_threads << " threads] ====================\n" << std::endl;
 
   Barrier barrier(n_threads);
 
@@ -656,14 +655,16 @@ void GeneralBench(std::vector<ThreadPartition>& partitions, Hash<T>* index,
   }
 
   const double avg = duration_sum / n_threads;
-  printf("%d threads, Time = %f s, throughput = %f ops/s, fastest = %f, slowest = %f\n",
+  printf("  %-12s  %10s  %16s  %14s  %14s\n",
+         "Threads", "Time (s)", "Throughput (ops/s)", "Fastest", "Slowest");
+  printf("  %-12d  %10.4f  %16.0f  %14.0f  %14.0f\n",
          n_threads,
          avg,
          total_ops / avg,
          total_ops / fastest,
          total_ops / slowest);
 
-  std::cout << full_label << " End" << std::endl;
+  std::cout << "\n-------------------- " << label << " [" << n_threads << " threads] End --------------------\n" << std::endl;
 }
 
 // ---------------------------------------------------------------------------
@@ -770,7 +771,7 @@ static void Run(const std::string& index_type, const std::string& key_type,
   const bool is_variable = (key_type == "variable");
   const uint64_t total_gen = op_count * 2 + load_count;
 
-  std::cout << "Generate workload" << std::endl;
+  std::cout << "[WORKLOAD] Generating ..." << std::endl;
   std::vector<char> workload_buf;
   if (distribution == "uniform") {
     workload_buf = GenerateUniformWorkload(total_gen, var_len,
@@ -792,8 +793,8 @@ static void Run(const std::string& index_type, const std::string& key_type,
     insert_workload_ptr = insert_buf.data();
   }
 
-  std::cout << "Finish generating workload" << std::endl;
-  std::cout << "load num = " << load_count << std::endl;
+  std::cout << "[WORKLOAD] Done" << std::endl;
+  std::cout << "[WORKLOAD] Pre-load count = " << load_count << std::endl;
 
   PreLoad<T>(load_count, index, var_len,
              const_cast<void*>(insert_workload_ptr));
@@ -830,7 +831,7 @@ static void Run(const std::string& index_type, const std::string& key_type,
   // ---- Benchmark dispatch ----
 
   if (operation == "insert") {
-    std::cout << "Insert-only Benchmark" << std::endl;
+    std::cout << "[BENCH] Insert-only" << std::endl;
     for (auto& p : partitions) p.workload = op_insert_workload;
     if (use_epoch) {
       GeneralBench<T>(partitions, index, n_threads, op_count, "Insert",
@@ -846,7 +847,7 @@ static void Run(const std::string& index_type, const std::string& key_type,
 
   } else if (operation == "pos") {
     if (load_count == 0) {
-      std::cout << "Please first specify the #pre-load keys!" << std::endl;
+      std::cout << "[ERROR] Please specify the #pre-load keys first!" << std::endl;
       return;
     }
     for (auto& p : partitions) p.workload = static_cast<void*>(workload_buf.data());
@@ -864,7 +865,7 @@ static void Run(const std::string& index_type, const std::string& key_type,
 
   } else if (operation == "neg") {
     if (load_count == 0) {
-      std::cout << "Please first specify the #pre-load keys!" << std::endl;
+      std::cout << "[ERROR] Please specify the #pre-load keys first!" << std::endl;
       return;
     }
     if (use_epoch) {
@@ -881,7 +882,7 @@ static void Run(const std::string& index_type, const std::string& key_type,
 
   } else if (operation == "delete") {
     if (load_count == 0) {
-      std::cout << "Please first specify the #pre-load keys!" << std::endl;
+      std::cout << "[ERROR] Please specify the #pre-load keys first!" << std::endl;
       return;
     }
     for (auto& p : partitions) p.workload = static_cast<void*>(workload_buf.data());
@@ -914,7 +915,7 @@ static void Run(const std::string& index_type, const std::string& key_type,
     }
 
   } else if (operation == "skew-all") {
-    std::cout << "Comprehensive skew Benchmark" << std::endl;
+    std::cout << "[BENCH] Comprehensive skew" << std::endl;
     for (auto& p : partitions) p.workload = op_insert_workload;
     if (use_epoch) {
       GeneralBench<T>(partitions, index, n_threads, op_count, "Insert",
@@ -982,10 +983,7 @@ static void Run(const std::string& index_type, const std::string& key_type,
     index->GetNumber();
 
   } else { // "full" – all single operations
-    std::cout << "Comprehensive Benchmark" << std::endl;
-
-    // Insert
-    std::cout << "insertion start" << std::endl;
+    std::cout << "[BENCH] Comprehensive" << std::endl;
     for (auto& p : partitions) p.workload = op_insert_workload;
     if (use_epoch) {
       GeneralBench<T>(partitions, index, n_threads, op_count, "Insert",
@@ -1068,21 +1066,45 @@ static bool CheckRatio(double r, double s, double d) {
 }
 
 // ---------------------------------------------------------------------------
-// Entry point
+// Command-line interface (argparse)
+//
+// This replaces the original gflags-based interface. Flag name mappings:
+//
+//   Old (gflags)          New (argparse)
+//   ─────────────────     ────────────────────────────────────────────
+//   --p=<n>               -p <n>  / --operations=<n>
+//   --t=<n>               -t <n>  / --threads=<n>
+//   --n=<n>               -n <n>  / --load-count=<n>
+//   --i=<n>               -i <n>  / --initial-segments=<n>
+//   --op=<s>                --op=<s>
+//   --k=<s>               -k <s>  / --key-type=<s>
+//   --index=<s>             --index=<s>
+//   --distribution=<s>      --distribution=<s>
+//   --e=<0|1>             -e      / --epoch           (boolean flag)
+//   --ed=<n>                --epoch-duration=<n>
+//   --r=<d>               -r <d>  / --read-ratio=<d>
+//   --s=<d>               -s <d>  / --insert-ratio=<d>
+//   --d=<d>               -d <d>  / --delete-ratio=<d>
+//   --skew=<d>              --skew=<d>
+//   --vl=<n>                --var-length=<n>
+//   --loadType=<n>          --load-type=<n>
+//   --ps=<n>                --pool-size=<n>
+//
+//   Use --help to list all accepted arguments.
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
   SetAffinity(0);
 
   // All configurable parameters with their defaults (matching the original).
-  std::string index_type   = "dash-ex";
+  std::string index_type   = "cceh";
   std::string key_type     = "fixed";
   std::string distribution = "uniform";
   uint64_t    init_cap     = 64;
   int         n_threads    = 1;
-  uint64_t    load_count   = 0;
+  uint64_t    load_count   = 10000000;
   uint64_t    load_type    = 0;
-  uint64_t    op_count     = 20000000;
+  uint64_t    op_count     = 10000000;
   std::string operation    = "full";
   double      read_r       = 1.0;
   double      ins_r        = 0.0;
@@ -1098,7 +1120,7 @@ int main(int argc, char* argv[]) {
 
   parser.add_argument("--index")
       .default_value(index_type)
-      .help("which index to evaluate: dash-ex / dash-lh / cceh / level")
+      .help("which index to evaluate: cceh")
       .store_into(index_type);
   parser.add_argument("-k", "--key-type")
       .default_value(key_type)
@@ -1175,24 +1197,21 @@ int main(int argc, char* argv[]) {
 
   const size_t pool_size = pool_size_gb * 1024ul * 1024ul * 1024ul;
 
-  std::cout << "Distribution = " << distribution << std::endl;
-
+  std::cout << "[CONFIG] Distribution   = " << distribution << std::endl;
   if (use_epoch) {
-    std::cout << "Epoch registration at application level" << std::endl;
+    std::cout << "[CONFIG] Epoch           = enabled" << std::endl;
   }
-
   if (distribution == "skew") {
-    std::cout << "Skew theta = " << skew_factor << std::endl;
+    std::cout << "[CONFIG] Skew theta      = " << skew_factor << std::endl;
   }
-
   if (operation == "mixed") {
-    std::cout << "Search ratio = " << read_r << std::endl;
-    std::cout << "Insert ratio = " << ins_r << std::endl;
-    std::cout << "Delete ratio = " << del_r << std::endl;
+    std::cout << "[CONFIG] Search ratio    = " << read_r << std::endl;
+    std::cout << "[CONFIG] Insert ratio    = " << ins_r << std::endl;
+    std::cout << "[CONFIG] Delete ratio    = " << del_r << std::endl;
   }
 
   if (!CheckRatio(read_r, ins_r, del_r)) {
-    std::cout << "The ratios do not sum to 100%!" << std::endl;
+    std::cout << "[ERROR] Ratios do not sum to 100%!" << std::endl;
     return 0;
   }
 
@@ -1203,7 +1222,7 @@ int main(int argc, char* argv[]) {
                   read_r, ins_r, del_r, skew_factor,
                   load_type, pool_size);
   } else {
-    std::cout << "Variable-length key length = " << var_len << std::endl;
+    std::cout << "[CONFIG] Variable key len = " << var_len << std::endl;
     Run<string_key*>(index_type, key_type, operation, distribution,
                      static_cast<int>(init_cap), n_threads, load_count,
                      op_count, var_len, use_epoch, epoch_dur,
