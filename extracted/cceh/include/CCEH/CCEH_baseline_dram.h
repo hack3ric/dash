@@ -20,11 +20,11 @@ deadlock caused by sudden system failure.
 #include <iostream>
 #include <shared_mutex>
 
-#include "../../util/hash.h"
-#include "../../util/pair.h"
-#include "../../util/utils.h"
-#include "../Hash.h"
-#include "../allocator_new.h"
+#include "CCEH/Hash.h"
+#include "CCEH/allocator.h"
+#include "CCEH/hash.h"
+#include "CCEH/pair.h"
+#include "CCEH/utils.h"
 
 #define INPLACE 1
 #define EPOCH 0
@@ -361,6 +361,7 @@ Segment<T>** Segment<T>::Split(size_t key_hash, log_entry* log) {
 
 template <class T>
 CCEH<T>::CCEH(int initCap) {
+  Allocator::Initialize();
   Directory<T>::New(&dir, initCap);
   Seg_array<T>::New(&dir->new_sa, initCap);
   dir->sa = dir->new_sa;
@@ -382,6 +383,7 @@ CCEH<T>::CCEH(int initCap) {
 
 template <class T>
 CCEH<T>::CCEH(void) {
+  Allocator::Initialize();
   std::cout << "Reintialize Up for CCEH" << std::endl;
 }
 
